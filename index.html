@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Suomen Polku — Финский на практике</title>
-<meta name="description" content="Финский язык для работы в магазине и повседневной жизни" />
+<meta name="description" content="Финский язык для работы в магазине (food и non-food) и повседневной жизни" />
 <meta name="theme-color" content="#2E7D53" />
 <style>
   html, body { margin: 0; padding: 0; background: #FBF8F0; }
@@ -40,6 +40,8 @@ import {
   BookOpen, ShoppingBasket, Croissant, Carrot, Apple, Milk, Beef,
   SprayCan, Plug, Info, CreditCard, Boxes, ListChecks, ChefHat, BarChart3,
   Zap, Quote, MessagesSquare, UserCircle, Search, Shuffle, Volume2, BookMarked, Mic2,
+  Shirt, Dumbbell, Hammer, Baby, Sofa, UtensilsCrossed, Flower2, Undo2, Receipt, Gift, Tag, Package,
+  CalendarClock, Wrench, Truck,
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -419,47 +421,313 @@ const CASE_LABELS = [
 const IRREGULAR_CASES = {
   "veli": { illative: "veljeen", essive: "veljenä" },
   "lapsi": { illative: "lapseen", essive: "lapsena" },
+  "veitsi": { illative: "veitseen", essive: "veitsenä" },
+  "joulukuusi": { illative: "joulukuuseen", essive: "joulukuusena" },
 };
+
+// Гармония гласных: решает последняя из a/o/u (задняя) или ä/ö/y (передняя); если таких нет (только e, i) — передняя
+function isFront(word) {
+  const m = word.toLowerCase().match(/[aouäöy](?=[^aouäöy]*$)/);
+  return m ? /[äöy]/.test(m[0]) : true;
+}
 
 function declineNoun(nom, gen, part) {
   if (!gen || !gen.endsWith("n") || !part) return null;
-  if (IRREGULAR_CASES[nom]) {
-    const genStem = gen.slice(0, -1);
-    const front = /[äöy]/.test(nom);
-    return {
-      nominative: nom, genitive: gen, partitive: part,
-      illative: IRREGULAR_CASES[nom].illative,
-      inessive: genStem + (front ? "ssä" : "ssa"), elative: genStem + (front ? "stä" : "sta"),
-      adessive: genStem + (front ? "llä" : "lla"), ablative: genStem + (front ? "ltä" : "lta"),
-      allative: genStem + "lle", essive: IRREGULAR_CASES[nom].essive,
-      translative: genStem + "ksi", abessive: genStem + (front ? "ttä" : "tta"),
-    };
-  }
   const genStem = gen.slice(0, -1);
-  const front = /[äöy]/.test(nom);
+  const front = isFront(nom);
+  const suf = (b, f) => (front ? f : b);
+  const base = {
+    nominative: nom, genitive: gen, partitive: part,
+    inessive: genStem + suf("ssa", "ssä"), elative: genStem + suf("sta", "stä"),
+    adessive: genStem + suf("lla", "llä"), ablative: genStem + suf("lta", "ltä"),
+    allative: genStem + "lle", translative: genStem + "ksi", abessive: genStem + suf("tta", "ttä"),
+  };
+  if (IRREGULAR_CASES[nom]) {
+    return { ...base, illative: IRREGULAR_CASES[nom].illative, essive: IRREGULAR_CASES[nom].essive };
+  }
   const lastChar = nom.slice(-1);
   const secondLast = nom.slice(-2, -1);
   const endsInVowel = /[aeiouyäö]/i.test(lastChar);
-  const isDiphthongI = lastChar === "i" && /[aeoäö]/i.test(secondLast);
-  const isSingleE = lastChar === "e" && secondLast !== "e";
+  const doubleStem = /([aeiouyäö])\1$/.test(genStem);
+  const eNom = lastChar === "e" && secondLast !== "e";
 
   let illative;
-  if (!endsInVowel) illative = genStem + genStem.slice(-1) + "n";
-  else if (isSingleE) illative = nom + "eseen";
-  else if (isDiphthongI) illative = nom + "hin";
-  else illative = nom + lastChar + "n";
+  if ((eNom || lastChar === "s") && doubleStem) illative = genStem + "seen";          // hame → hameeseen, kangas → kankaaseen
+  else if (!endsInVowel) illative = genStem + genStem.slice(-1) + "n";               // tilaus → tilaukseen
+  else if (/(ie|uo|yö)$/.test(nom) || /([aeiouyäö])\1$/.test(nom)) illative = nom + "h" + lastChar + "n"; // maa → maahan, työ → työhön
+  else if (lastChar === "i" && /[aeoäö]/i.test(secondLast)) illative = nom + "hin";
+  else illative = nom + lastChar + "n";                                              // talo → taloon
 
-  const essBase = endsInVowel ? nom : genStem;
-  const essive = essBase + (front ? "nä" : "na");
+  const essive = (eNom || !endsInVowel ? genStem : nom) + suf("na", "nä");           // kauppa → kauppana, hame → hameena
+  return { ...base, illative, essive };
+}
 
+/* ---------------------------------------------------------
+   ДАННЫЕ: Non-food (отделы Lidl и их собственные бренды)
+--------------------------------------------------------- */
+// N(фин, рус, родительный, мн.ч. им., партитив, доп.) — существительное с формами
+function N(fi, ru, gen, pl, part, extra) {
   return {
-    nominative: nom, genitive: gen, partitive: part, illative,
-    inessive: genStem + (front ? "ssä" : "ssa"), elative: genStem + (front ? "stä" : "sta"),
-    adessive: genStem + (front ? "llä" : "lla"), ablative: genStem + (front ? "ltä" : "lta"),
-    allative: genStem + "lle", essive,
-    translative: genStem + "ksi", abessive: genStem + (front ? "ttä" : "tta"),
+    fi, ru, ...(extra || {}),
+    forms: [
+      { label: "родительный", value: gen },
+      ...(pl && pl !== "—" ? [{ label: "мн. число", value: pl }] : []),
+      { label: "партитив", value: part },
+    ],
   };
 }
+// P(фин, рус, род.мн., парт.мн.) — слово, которое обычно стоит во множественном числе
+function P(fi, ru, genPl, partPl, extra) {
+  return {
+    fi, ru, ...(extra || {}),
+    forms: [
+      { label: "род. мн. числа", value: genPl },
+      { label: "партитив мн. числа", value: partPl },
+    ],
+  };
+}
+// A(фин, рус) — прилагательное / наречие без склонения
+function A(fi, ru, note) { return { fi, ru, pos: "прил.", note, cases: null }; }
+
+const TOPICS_NONFOOD = [
+  {
+    id: "clothes", fi: "Vaatteet (Esmara, Livergy)", ru: "Одежда и обувь", icon: Shirt,
+    words: [
+      N("mekko", "платье", "mekon", "mekot", "mekkoa", { note: "женская линия Esmara" }),
+      N("hame", "юбка", "hameen", "hameet", "hametta"),
+      P("housut", "брюки", "housujen", "housuja"),
+      P("farkut", "джинсы", "farkkujen", "farkkuja"),
+      N("paita", "рубашка, блузка", "paidan", "paidat", "paitaa", { note: "мужская линия — Livergy" }),
+      N("T-paita", "футболка", "T-paidan", "T-paidat", "T-paitaa"),
+      N("neule", "вязаный джемпер, кофта", "neuleen", "neuleet", "neuletta"),
+      N("huppari", "худи", "hupparin", "hupparit", "huppariaa", { pos: "разг." }),
+      N("takki", "куртка, пальто", "takin", "takit", "takkia"),
+      N("toppatakki", "пуховая / утеплённая куртка", "toppatakin", "toppatakit", "toppatakkia"),
+      P("sukat", "носки", "sukkien", "sukkia"),
+      P("sukkahousut", "колготки", "sukkahousujen", "sukkahousuja"),
+      P("alusvaatteet", "нижнее бельё", "alusvaatteiden", "alusvaatteita"),
+      N("pyjama", "пижама", "pyjaman", "pyjamat", "pyjamaa"),
+      N("kylpytakki", "банный халат", "kylpytakin", "kylpytakit", "kylpytakkia"),
+      N("uimapuku", "купальник", "uimapuvun", "uimapuvut", "uimapukua"),
+      N("pipo", "шапка (вязаная)", "pipon", "pipot", "pipoa"),
+      N("huivi", "шарф, платок", "huivin", "huivit", "huivia"),
+      P("hanskat", "перчатки", "hanskojen", "hanskoja"),
+      P("lapaset", "варежки", "lapasten", "lapasia"),
+      N("vyö", "ремень", "vyön", "vyöt", "vyötä"),
+      P("kengät", "обувь, туфли", "kenkien", "kenkiä"),
+      P("saappaat", "сапоги", "saappaiden", "saappaita"),
+      P("tossut", "тапочки", "tossujen", "tossuja"),
+    ],
+  },
+  {
+    id: "sizes", fi: "Koot, värit, materiaalit", ru: "Размеры, цвета, материалы", icon: Tag,
+    words: [
+      N("koko", "размер", "koon", "koot", "kokoa"),
+      N("väri", "цвет", "värin", "värit", "väriä"),
+      N("sovituskoppi", "примерочная", "sovituskopin", "sovituskopit", "sovituskoppia"),
+      A("iso", "большой", "isompi — больше, размер побольше"),
+      A("pieni", "маленький", "pienempi — меньше, размер поменьше"),
+      A("liian pieni", "слишком маленький", "про размер вещи"),
+      A("liian iso", "слишком большой", "про размер вещи"),
+      A("musta", "чёрный"),
+      A("valkoinen", "белый"),
+      A("punainen", "красный"),
+      A("sininen", "синий, голубой"),
+      A("vihreä", "зелёный"),
+      A("keltainen", "жёлтый"),
+      A("harmaa", "серый"),
+      A("ruskea", "коричневый"),
+      A("vaaleanpunainen", "розовый"),
+      N("puuvilla", "хлопок", "puuvillan", "—", "puuvillaa", { cases: null }),
+      N("villa", "шерсть", "villan", "—", "villaa", { cases: null }),
+      N("nahka", "кожа (материал)", "nahan", "—", "nahkaa", { cases: null }),
+      N("polyesteri", "полиэстер", "polyesterin", "—", "polyesteria", { cases: null }),
+      N("kangas", "ткань", "kankaan", "kankaat", "kangasta"),
+      N("pesuohje", "инструкция по стирке", "pesuohjeen", "pesuohjeet", "pesuohjetta"),
+      { fi: "Mikä koko tämä on?", ru: "Какой это размер?", note: "вопрос покупателя" },
+      { fi: "Onko tätä isompana?", ru: "Есть такое в большем размере?", note: "isompana — в большем (размере)" },
+      { fi: "Onko tätä toisessa värissä?", ru: "Есть такое в другом цвете?" },
+      { fi: "Voinko sovittaa tätä?", ru: "Можно примерить?" },
+      { fi: "Pese 30 asteessa", ru: "Стирать при 30 градусах", note: "надпись на ярлыке с уходом" },
+    ],
+  },
+  {
+    id: "sport", fi: "Urheilu (Crivit)", ru: "Спорт и отдых", icon: Dumbbell,
+    words: [
+      N("urheilu", "спорт", "urheilun", "—", "urheilua", { cases: null }),
+      P("juoksukengät", "беговые кроссовки", "juoksukenkien", "juoksukenkiä"),
+      P("lenkkitossut", "кроссовки (разг.)", "lenkkitossujen", "lenkkitossuja", { pos: "разг." }),
+      P("trikoot", "легинсы, лосины", "trikoiden", "trikoita"),
+      N("urheilutoppi", "спортивный топ", "urheilutopin", "urheilutopit", "urheilutoppia"),
+      N("pyörä", "велосипед", "pyörän", "pyörät", "pyörää"),
+      N("kypärä", "шлем", "kypärän", "kypärät", "kypärää"),
+      N("reppu", "рюкзак", "repun", "reput", "reppua"),
+      N("vesipullo", "бутылка для воды", "vesipullon", "vesipullot", "vesipulloa"),
+      N("jumppamatto", "коврик для фитнеса", "jumppamaton", "jumppamatot", "jumppamattoa"),
+      N("käsipaino", "гантель", "käsipainon", "käsipainot", "käsipainoa"),
+      N("sykemittari", "пульсометр", "sykemittarin", "sykemittarit", "sykemittaria"),
+      P("sukset", "лыжи", "suksien", "suksia"),
+      P("sauvat", "палки (лыжные)", "sauvojen", "sauvoja"),
+      P("luistimet", "коньки", "luistimien", "luistimia"),
+      P("uimalasit", "очки для плавания", "uimalasien", "uimalaseja"),
+      N("teltta", "палатка", "teltan", "teltat", "telttaa"),
+      N("makuupussi", "спальный мешок", "makuupussin", "makuupussit", "makuupussia"),
+      N("retkeily", "поход, кемпинг", "retkeilyn", "—", "retkeilyä", { cases: null }),
+    ],
+  },
+  {
+    id: "diy", fi: "Rakennus ja työkalut (Parkside)", ru: "Строительство, ремонт, инструменты", icon: Hammer,
+    words: [
+      N("työkalu", "инструмент", "työkalun", "työkalut", "työkalua", { note: "бренд инструментов Lidl — Parkside" }),
+      N("vasara", "молоток", "vasaran", "vasarat", "vasaraa"),
+      N("ruuvimeisseli", "отвёртка", "ruuvimeisselin", "ruuvimeisselit", "ruuvimeisseliä"),
+      N("porakone", "дрель", "porakoneen", "porakoneet", "porakonetta"),
+      N("akkuporakone", "аккумуляторная дрель", "akkuporakoneen", "akkuporakoneet", "akkuporakonetta"),
+      N("pora", "сверло", "poran", "porat", "poraa"),
+      N("ruuvi", "шуруп, винт", "ruuvin", "ruuvit", "ruuvia"),
+      N("naula", "гвоздь", "naulan", "naulat", "naulaa"),
+      N("seinätulppa", "дюбель", "seinätulpan", "seinätulpat", "seinätulppaa"),
+      P("pihdit", "плоскогубцы, клещи", "pihtien", "pihtejä"),
+      N("jakoavain", "разводной ключ", "jakoavaimen", "jakoavaimet", "jakoavainta"),
+      N("mittanauha", "рулетка", "mittanauhan", "mittanauhat", "mittanauhaa"),
+      N("vatupassi", "уровень (пузырьковый)", "vatupassin", "vatupassit", "vatupassia", { pos: "разг." }),
+      N("käsisaha", "ножовка", "käsisahan", "käsisahat", "käsisahaa"),
+      N("sirkkeli", "циркулярная пила", "sirkkelin", "sirkkelit", "sirkkeliä"),
+      N("hiomakone", "шлифовальная машина", "hiomakoneen", "hiomakoneet", "hiomakonetta"),
+      N("jatkojohto", "удлинитель", "jatkojohdon", "jatkojohdot", "jatkojohtoa"),
+      N("akku", "аккумулятор", "akun", "akut", "akkua"),
+      N("laturi", "зарядное устройство", "laturin", "laturit", "laturia"),
+      N("työkalupakki", "ящик для инструментов", "työkalupakin", "työkalupakit", "työkalupakkia"),
+      P("suojalasit", "защитные очки", "suojalasien", "suojalaseja"),
+      P("työkäsineet", "рабочие перчатки", "työkäsineiden", "työkäsineitä"),
+      N("maali", "краска", "maalin", "maalit", "maalia"),
+      N("pensseli", "кисть (малярная)", "pensselin", "pensselit", "pensseliä"),
+    ],
+  },
+  {
+    id: "kids", fi: "Lasten osasto (Lupilu)", ru: "Детский отдел", icon: Baby,
+    words: [
+      N("vauva", "младенец", "vauvan", "vauvat", "vauvaa", { note: "детская одежда Lidl — Lupilu" }),
+      { fi: "lasten vaatteet", ru: "детская одежда", note: "фраза: «детские вещи»" },
+      N("body", "боди", "bodyn", "bodyt", "bodya"),
+      N("potkupuku", "ползунки, комбинезон для малыша", "potkupuvun", "potkupuvut", "potkupukua"),
+      N("haalari", "комбинезон (верхний)", "haalarin", "haalarit", "haalaria"),
+      N("kurahaalari", "непромокаемый комбинезон", "kurahaalarin", "kurahaalarit", "kurahaalaria"),
+      N("vaippa", "подгузник", "vaipan", "vaipat", "vaippaa"),
+      N("tutti", "соска-пустышка", "tutin", "tutit", "tuttia"),
+      N("tuttipullo", "бутылочка с соской", "tuttipullon", "tuttipullot", "tuttipulloa"),
+      N("lelu", "игрушка", "lelun", "lelut", "lelua"),
+      N("pehmolelu", "мягкая игрушка", "pehmolelun", "pehmolelut", "pehmolelua"),
+      N("palapeli", "пазл", "palapelin", "palapelit", "palapeliä"),
+      N("koulureppu", "школьный рюкзак", "koulurepun", "koulureput", "koulureppua"),
+      P("lastenvaunut", "детская коляска", "lastenvaunujen", "lastenvaunuja"),
+      N("turvaistuin", "детское автокресло", "turvaistuimen", "turvaistuimet", "turvaistuinta"),
+      { fi: "Minkä ikäiselle?", ru: "Для ребёнка какого возраста?", note: "вопрос продавца при выборе подарка" },
+      A("turvallinen", "безопасный", "про игрушку или товар для детей"),
+    ],
+  },
+  {
+    id: "furniture", fi: "Koti ja sisustus (Livarno)", ru: "Дом, мебель, интерьер", icon: Sofa,
+    words: [
+      N("sisustus", "интерьер, декор", "sisustuksen", "sisustukset", "sisustusta", { note: "мебель и декор Lidl — Livarno" }),
+      N("huonekalu", "предмет мебели", "huonekalun", "huonekalut", "huonekalua"),
+      N("sohva", "диван", "sohvan", "sohvat", "sohvaa"),
+      N("tuoli", "стул", "tuolin", "tuolit", "tuolia"),
+      N("pöytä", "стол", "pöydän", "pöydät", "pöytää"),
+      N("hylly", "полка (мебельная)", "hyllyn", "hyllyt", "hyllyä"),
+      N("kaappi", "шкаф", "kaapin", "kaapit", "kaappia"),
+      N("sänky", "кровать", "sängyn", "sängyt", "sänkyä"),
+      N("patja", "матрас", "patjan", "patjat", "patjaa"),
+      N("peitto", "одеяло", "peiton", "peitot", "peittoa"),
+      N("tyyny", "подушка", "tyynyn", "tyynyt", "tyynyä"),
+      N("lakana", "простыня", "lakanan", "lakanat", "lakanaa"),
+      N("pyyhe", "полотенце", "pyyhkeen", "pyyhkeet", "pyyhettä"),
+      N("matto", "ковёр, коврик", "maton", "matot", "mattoa"),
+      N("verho", "штора", "verhon", "verhot", "verhoa"),
+      N("lamppu", "лампа, лампочка", "lampun", "lamput", "lamppua"),
+      N("kynttilä", "свеча", "kynttilän", "kynttilät", "kynttilää"),
+      N("maljakko", "ваза", "maljakon", "maljakot", "maljakkoa"),
+      N("peili", "зеркало", "peilin", "peilit", "peiliä"),
+      N("säilytyslaatikko", "ящик для хранения", "säilytyslaatikon", "säilytyslaatikot", "säilytyslaatikkoa"),
+    ],
+  },
+  {
+    id: "kitchenware", fi: "Keittiötarvikkeet (Ernesto)", ru: "Посуда и кухонные товары", icon: UtensilsCrossed,
+    words: [
+      N("kattila", "кастрюля", "kattilan", "kattilat", "kattilaa", { note: "кухонная линия Lidl — Ernesto" }),
+      N("paistinpannu", "сковорода", "paistinpannun", "paistinpannut", "paistinpannua"),
+      N("lautanen", "тарелка", "lautasen", "lautaset", "lautasta"),
+      N("kulho", "миска", "kulhon", "kulhot", "kulhoa"),
+      N("muki", "кружка", "mukin", "mukit", "mukia"),
+      N("lasi", "стакан, стекло", "lasin", "lasit", "lasia"),
+      N("haarukka", "вилка", "haarukan", "haarukat", "haarukkaa"),
+      N("lusikka", "ложка", "lusikan", "lusikat", "lusikkaa"),
+      N("veitsi", "нож", "veitsen", "veitset", "veistä"),
+      P("ruokailuvälineet", "столовые приборы", "ruokailuvälineiden", "ruokailuvälineitä"),
+      N("leikkuulauta", "разделочная доска", "leikkuulaudan", "leikkuulaudat", "leikkuulautaa"),
+      N("termospullo", "термос", "termospullon", "termospullot", "termospulloa"),
+      N("kahvinkeitin", "кофеварка", "kahvinkeittimen", "kahvinkeittimet", "kahvinkeitintä"),
+      N("vedenkeitin", "электрический чайник", "vedenkeittimen", "vedenkeittimet", "vedenkeitintä"),
+      N("leivänpaahdin", "тостер", "leivänpaahtimen", "leivänpaahtimet", "leivänpaahdinta"),
+      N("sekoitin", "миксер, блендер", "sekoittimen", "sekoittimet", "sekoitinta"),
+    ],
+  },
+  {
+    id: "garden", fi: "Puutarha ja kausituotteet", ru: "Сад, дача и сезонные товары", icon: Flower2,
+    words: [
+      N("puutarha", "сад", "puutarhan", "puutarhat", "puutarhaa"),
+      N("kausituote", "сезонный товар", "kausituotteen", "kausituotteet", "kausituotetta"),
+      N("ruukku", "горшок", "ruukun", "ruukut", "ruukkua"),
+      N("kasvi", "растение", "kasvin", "kasvit", "kasvia"),
+      N("siemen", "семя", "siemenen", "siemenet", "siementä"),
+      N("multa", "земля, грунт", "mullan", "mullat", "multaa"),
+      N("lapio", "лопата", "lapion", "lapiot", "lapiota"),
+      N("lumilapio", "лопата для снега", "lumilapion", "lumilapiot", "lumilapiota"),
+      N("harava", "грабли", "haravan", "haravat", "haravaa"),
+      N("kastelukannu", "лейка", "kastelukannun", "kastelukannut", "kastelukannua"),
+      N("letku", "шланг", "letkun", "letkut", "letkua"),
+      N("ruohonleikkuri", "газонокосилка", "ruohonleikkurin", "ruohonleikkurit", "ruohonleikkuria"),
+      N("grilli", "гриль", "grillin", "grillit", "grilliä"),
+      P("puutarhakalusteet", "садовая мебель", "puutarhakalusteiden", "puutarhakalusteita"),
+      N("aurinkovarjo", "зонт от солнца", "aurinkovarjon", "aurinkovarjot", "aurinkovarjoa"),
+      N("joulukoriste", "ёлочное украшение", "joulukoristeen", "joulukoristeet", "joulukoristetta"),
+      N("joulukuusi", "рождественская ёлка", "joulukuusen", "joulukuuset", "joulukuusta"),
+    ],
+  },
+  {
+    id: "returns", fi: "Palautukset ja tilaukset", ru: "Возвраты, обмен и заказы", icon: Undo2,
+    words: [
+      N("palautus", "возврат", "palautuksen", "palautukset", "palautusta"),
+      { fi: "palauttaa", ru: "вернуть (товар, деньги)", pos: "гл.", example: { fi: "Haluaisin palauttaa tämän.", ru: "Я хотел бы вернуть это." } },
+      N("vaihto", "обмен", "vaihdon", "vaihdot", "vaihtoa"),
+      { fi: "vaihtaa", ru: "обменять, заменить", pos: "гл.", example: { fi: "Voinko vaihtaa tämän toiseen kokoon?", ru: "Можно обменять на другой размер?" } },
+      N("kuitti", "чек", "kuitin", "kuitit", "kuittia"),
+      N("lahjakuitti", "подарочный чек (без цены)", "lahjakuitin", "lahjakuitit", "lahjakuittia"),
+      N("lahjakortti", "подарочная карта", "lahjakortin", "lahjakortit", "lahjakorttia"),
+      N("palautusaika", "срок возврата", "palautusajan", "palautusajat", "palautusaikaa"),
+      N("takuu", "гарантия", "takuun", "takuut", "takuuta", { cases: null }),
+      N("reklamaatio", "рекламация, жалоба на дефект", "reklamaation", "reklamaatiot", "reklamaatiota"),
+      N("virhe", "дефект, ошибка", "virheen", "virheet", "virhettä"),
+      N("vika", "неисправность, брак", "vian", "viat", "vikaa"),
+      A("viallinen", "бракованный, с дефектом"),
+      A("rikki", "сломанный", "нареч.: «Se on rikki» — оно сломано"),
+      A("käyttämätön", "неиспользованный"),
+      A("avaamaton", "нераспечатанный"),
+      N("alkuperäispakkaus", "оригинальная упаковка", "alkuperäispakkauksen", "alkuperäispakkaukset", "alkuperäispakkausta"),
+      N("hyvitys", "возмещение, компенсация", "hyvityksen", "hyvitykset", "hyvitystä"),
+      { fi: "rahat takaisin", ru: "деньги обратно", note: "клиент выбирает возврат денег вместо обмена" },
+      N("tilaus", "заказ", "tilauksen", "tilaukset", "tilausta"),
+      { fi: "tilata", ru: "заказать", pos: "гл.", example: { fi: "Voinko tilata tämän tuotteen?", ru: "Могу я заказать этот товар?" } },
+      N("ennakkotilaus", "предзаказ", "ennakkotilauksen", "ennakkotilaukset", "ennakkotilausta"),
+      N("toimitusaika", "срок поставки", "toimitusajan", "toimitusajat", "toimitusaikaa"),
+      { fi: "saapua", ru: "прибыть, поступить", pos: "гл.", example: { fi: "Tuote saapuu ensi viikolla.", ru: "Товар поступит на следующей неделе." } },
+      N("nouto", "самовывоз, получение", "noudon", "noudot", "noutoa"),
+      { fi: "noutaa", ru: "забрать (заказ)", pos: "гл.", example: { fi: "Tulin noutamaan tilaukseni.", ru: "Я пришёл забрать свой заказ." } },
+      { fi: "Onko teillä kuitti mukana?", ru: "У вас есть чек с собой?", note: "стандартный вопрос при возврате" },
+      { fi: "Mikä on puhelinnumeronne?", ru: "Какой у вас номер телефона?", note: "при заказе: чтобы сообщить о поступлении" },
+    ],
+  },
+];
 
 /* ---------------------------------------------------------
    ХЕЛПЕРЫ: обогащение слова
@@ -468,13 +736,15 @@ const VERB_WORDS = new Set(["skannata", "paistaa", "jäähdyttää"]);
 const ADJ_WORDS = new Set(["tuore", "gluteeniton", "esivalmistettu", "suljettu"]);
 const PRONOUN_WORDS = new Set(["minä", "sinä", "hän", "me", "te", "he"]);
 const SLANG_WORDS = new Set(["limppu", "jätski", "limsa", "kalja", "karkki", "sipsi", "purkki", "tölkki", "possu", "pillimehu", "purnukka"]);
-const PRODUCT_TOPICS = new Set(["bakery", "vegetables", "fruits", "dairy", "meat", "household", "electronics", "slang"]);
+const PRODUCT_TOPICS = new Set(["bakery", "vegetables", "fruits", "dairy", "meat", "household", "electronics", "slang", "clothes", "sport", "diy", "kids", "furniture", "kitchenware", "garden"]);
 const LOCATION_TOPICS = new Set(["store", "checkout", "warehouse", "salesfloor", "bakerywork"]);
 const TOPIC_CONTEXT_NOTE = {
   checkout: "На кассе, при расчёте с покупателем",
   warehouse: "На складе, при приёмке или учёте товара",
   salesfloor: "В торговом зале, повседневная задача",
   bakerywork: "В зоне выпечки, рабочий процесс",
+  sizes: "Разговор о размере, цвете или материале",
+  returns: "Обращение покупателя: возврат, обмен, заказ",
 };
 
 function shortRu(ru) { return ru.split(",")[0].split("(")[0].trim(); }
@@ -503,7 +773,7 @@ function enrichWord(word, topicId) {
   if (!note && hasSpace && TOPIC_CONTEXT_NOTE[topicId]) note = TOPIC_CONTEXT_NOTE[topicId];
 
   let cases = word.cases;
-  if (!cases && !hasSpace && word.forms) {
+  if (cases === undefined && !hasSpace && word.forms) {
     const gen = word.forms.find((f) => f.label === "родительный");
     const part = word.forms.find((f) => f.label === "партитив");
     if (gen && part) cases = declineNoun(word.fi, gen.value, part.value);
@@ -529,6 +799,7 @@ function topicGroup(topicId) {
   if (topicId === "custom") return "custom";
   if (topicId === "mixed") return "work";
   if (TOPICS_WORK.some((t) => t.id === topicId)) return "work";
+  if (TOPICS_NONFOOD.some((t) => t.id === topicId)) return "nonfood";
   return "general";
 }
 
@@ -549,6 +820,8 @@ function speakFi(text) {
 const DEFAULT_GOAL = 30;
 const GOAL_OPTIONS = [10, 20, 30, 50];
 const ALL_WORK_WORDS = TOPICS_WORK.flatMap((t) => wordsWithIds(t));
+const ALL_NONFOOD_WORDS = TOPICS_NONFOOD.flatMap((t) => wordsWithIds(t));
+const ALL_STORE_WORDS = [...ALL_WORK_WORDS, ...ALL_NONFOOD_WORDS];
 const RIGHT_SPEAKERS = new Set(["ты", "sinä", "työntekijä"]);
 
 /* ---------------------------------------------------------
@@ -639,6 +912,183 @@ const EXERCISES = [
         options: ["näkemiin", "anteeksi", "kiitos", "selvä"], ru: "Хорошо, до завтра!" },
     ],
   },
+  /* ===== Обращения клиентов: Non-food ===== */
+  {
+    id: "ex-return", section: "Обращения клиентов", title: "Возврат товара", icon: Undo2,
+    situation: "Покупатель хочет вернуть куртку, которая оказалась мала.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Hei, haluaisin ___ tämän takin.", correct: "palauttaa",
+        options: ["palauttaa", "syödä", "keittää", "nukkua"], ru: "Здравствуйте, я хотел бы вернуть эту куртку." },
+      { speaker: "Ты", side: "right", template: "Onko teillä ___ mukana?", correct: "kuitti",
+        options: ["kuitti", "pakastin", "jäätelö", "leipä"], ru: "У вас есть чек с собой?" },
+      { speaker: "Покупатель", side: "left", template: "Ostin sen ___, mutta se on liian pieni.", correct: "eilen",
+        options: ["eilen", "huomenna", "ensi viikolla", "kolmen vuoden päästä"], ru: "Я купил её вчера, но она слишком мала." },
+      { speaker: "Ты", side: "right", template: "Selvä. Haluatko rahat ___ vai vaihdon toiseen kokoon?", correct: "takaisin",
+        options: ["takaisin", "huomenna", "tarjouksessa", "kuumana"], ru: "Хорошо. Хотите вернуть деньги или обменять на другой размер?" },
+      { speaker: "Покупатель", side: "left", template: "___, kiitos.", correct: "Rahat takaisin",
+        options: ["Rahat takaisin", "Hyvää yötä", "Näkemiin", "Ei kiitos"], ru: "Деньги обратно, пожалуйста." },
+    ],
+  },
+  {
+    id: "ex-deadline", section: "Обращения клиентов", title: "Срок возврата", icon: CalendarClock,
+    situation: "Покупатель уточняет срок возврата. Срок в примере условный — уточняйте правила вашего магазина.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Anteeksi, kuinka pitkä ___ on?", correct: "palautusaika",
+        options: ["palautusaika", "sipsi", "varasto", "kassajono"], ru: "Извините, какой срок возврата?" },
+      { speaker: "Ты", side: "right", template: "Palautusaika on neljätoista ___.", correct: "päivää",
+        options: ["päivää", "kiloa", "euroa", "litraa"], ru: "Срок возврата — четырнадцать дней." },
+      { speaker: "Покупатель", side: "left", template: "Entä jos ___ on jo avattu?", correct: "pakkaus",
+        options: ["pakkaus", "kuitti", "maanantai", "hinta"], ru: "А если упаковка уже вскрыта?" },
+      { speaker: "Ты", side: "right", template: "Tuotteen pitää olla ___ ja alkuperäispakkauksessa.", correct: "käyttämätön",
+        options: ["käyttämätön", "raskas", "herkullinen", "ulkona"], ru: "Товар должен быть неиспользованным и в оригинальной упаковке." },
+      { speaker: "Покупатель", side: "left", template: "Okei, ___ tiedosta!", correct: "kiitos",
+        options: ["kiitos", "anteeksi", "näkemiin", "hyvää huomenta"], ru: "Хорошо, спасибо за информацию!" },
+    ],
+  },
+  {
+    id: "ex-exchange", section: "Обращения клиентов", title: "Обмен на другой размер", icon: Shirt,
+    situation: "Рубашка оказалась мала, покупатель хочет другой размер.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Tämä paita on liian pieni. Onko teillä sitä ___ koossa?", correct: "isommassa",
+        options: ["isommassa", "pienemmässä", "punaisessa", "pakastetussa"], ru: "Эта рубашка слишком мала. Есть такая в большем размере?" },
+      { speaker: "Ты", side: "right", template: "Menen ___ katsomaan.", correct: "varastoon",
+        options: ["varastoon", "kuuhun", "uimahalliin", "kirkkoon"], ru: "Схожу на склад посмотреть." },
+      { speaker: "Ты", side: "right", template: "Valitettavasti isompaa ___ ei ole.", correct: "kokoa",
+        options: ["kokoa", "vaippaa", "maitoa", "omenaa"], ru: "К сожалению, большего размера нет." },
+      { speaker: "Ты", side: "right", template: "Haluatko, että ___ sen toisesta myymälästä?", correct: "tilaan",
+        options: ["tilaan", "syön", "pesen", "hiihdän"], ru: "Хотите, я закажу её из другого магазина?" },
+      { speaker: "Покупатель", side: "left", template: "Hyvä, kiitos ___!", correct: "avusta",
+        options: ["avusta", "sormesta", "aamusta", "jalasta"], ru: "Хорошо, спасибо за помощь!" },
+    ],
+  },
+  {
+    id: "ex-defect", section: "Обращения клиентов", title: "Бракованный товар", icon: Wrench,
+    situation: "Покупатель принёс дрель Parkside, которая перестала работать.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Anteeksi, tämä porakone on ___.", correct: "rikki",
+        options: ["rikki", "herkullinen", "tuore", "pehmeä"], ru: "Извините, эта дрель сломана." },
+      { speaker: "Ты", side: "right", template: "Se on ___ kuulla.", correct: "ikävä",
+        options: ["ikävä", "hauska", "herkullinen", "uusi"], ru: "Жаль это слышать." },
+      { speaker: "Ты", side: "right", template: "Milloin ___ sen?", correct: "ostit",
+        options: ["ostit", "myit", "paistoit", "nukuit"], ru: "Когда вы её купили?" },
+      { speaker: "Покупатель", side: "left", template: "Ostin sen viime ___.", correct: "viikolla",
+        options: ["viikolla", "kilolla", "kassalla", "kuitilla"], ru: "Я купил её на прошлой неделе." },
+      { speaker: "Ты", side: "right", template: "Tuotteella on ___, joten voimme korjata tai vaihtaa sen.", correct: "takuu",
+        options: ["takuu", "pussi", "nälkä", "sauna"], ru: "На товар есть гарантия, поэтому мы можем починить или заменить его." },
+    ],
+  },
+  {
+    id: "ex-order", section: "Обращения клиентов", title: "Заказ товара", icon: Package,
+    situation: "Нужного товара нет на складе, покупатель хочет его заказать.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Hei, voinko ___ tämän tuotteen?", correct: "tilata",
+        options: ["tilata", "syödä", "juoda", "nukkua"], ru: "Здравствуйте, могу я заказать этот товар?" },
+      { speaker: "Ты", side: "right", template: "Valitettavasti sitä ei ole ___ varastossa.", correct: "nyt",
+        options: ["nyt", "kuusi", "punainen", "hiljaa"], ru: "К сожалению, сейчас его нет на складе." },
+      { speaker: "Ты", side: "right", template: "Se ___ meille ensi viikolla.", correct: "saapuu",
+        options: ["saapuu", "uppoaa", "nukkuu", "laulaa"], ru: "Он поступит к нам на следующей неделе." },
+      { speaker: "Ты", side: "right", template: "Voimme soittaa teille, kun se on ___.", correct: "saapunut",
+        options: ["saapunut", "nukkunut", "syöty", "pesty"], ru: "Мы позвоним вам, когда он поступит." },
+      { speaker: "Ты", side: "right", template: "Tarvitsen ___.", correct: "puhelinnumeronne",
+        options: ["puhelinnumeronne", "jääkaappinne", "sateenvarjonne", "nuudelinne"], ru: "Мне нужен ваш номер телефона." },
+      { speaker: "Покупатель", side: "left", template: "Selvä, ___ sitten!", correct: "nähdään",
+        options: ["nähdään", "syödään", "nukutaan", "juostaan"], ru: "Хорошо, тогда увидимся!" },
+    ],
+  },
+  {
+    id: "ex-pickup", section: "Обращения клиентов", title: "Получение заказа", icon: Truck,
+    situation: "Покупатель пришёл забрать заказанный товар.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Hei, tulin ___ tilaamani tuotteen.", correct: "noutamaan",
+        options: ["noutamaan", "syömään", "nukkumaan", "laulamaan"], ru: "Здравствуйте, я пришёл забрать заказанный товар." },
+      { speaker: "Ты", side: "right", template: "Mikä on ___?", correct: "nimenne",
+        options: ["nimenne", "jääkaappinne", "leipänne", "sukkanne"], ru: "Как вас зовут (на какое имя заказ)?" },
+      { speaker: "Покупатель", side: "left", template: "Nimi on Virtanen. Tilaus on tehty viime ___.", correct: "viikolla",
+        options: ["viikolla", "kilolla", "kassalla", "kuitilla"], ru: "Фамилия Виртанен. Заказ сделан на прошлой неделе." },
+      { speaker: "Ты", side: "right", template: "Tuote on ___ noudettavissa.", correct: "valmiina",
+        options: ["valmiina", "kuumana", "hiljaa", "vihreänä"], ru: "Товар готов к выдаче." },
+      { speaker: "Покупатель", side: "left", template: "Kiitos, ___ päivänjatkoa!", correct: "hyvää",
+        options: ["hyvää", "kylmää", "punaista", "pientä"], ru: "Спасибо, хорошего дня!" },
+    ],
+  },
+  {
+    id: "ex-fitting", section: "Обращения клиентов", title: "Примерка и другой цвет", icon: Tag,
+    situation: "Покупатель с джинсами Esmara хочет примерить их и посмотреть другой цвет.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Voinko sovittaa näitä farkkuja? Missä on ___?", correct: "sovituskoppi",
+        options: ["sovituskoppi", "pakastin", "leipätiski", "pullonpalautus"], ru: "Можно примерить эти джинсы? Где примерочная?" },
+      { speaker: "Ты", side: "right", template: "Sovituskopit ovat ___ takana.", correct: "tuolla",
+        options: ["tuolla", "huomenna", "punaisella", "hiljaa"], ru: "Примерочные вон там сзади." },
+      { speaker: "Покупатель", side: "left", template: "Onko tätä ___ värissä?", correct: "toisessa",
+        options: ["toisessa", "herkullisessa", "hiljaisessa", "kuivassa"], ru: "Есть такое в другом цвете?" },
+      { speaker: "Ты", side: "right", template: "Meillä on tätä myös ___ ja mustana.", correct: "sinisenä",
+        options: ["sinisenä", "sormena", "kuukautena", "kenkänä"], ru: "У нас есть такие ещё синие и чёрные." },
+      { speaker: "Покупатель", side: "left", template: "Otan ___ sinisen.", correct: "tämän",
+        options: ["tämän", "tässä", "täällä", "tuossa"], ru: "Возьму вот эти синие." },
+    ],
+  },
+  {
+    id: "ex-gift", section: "Обращения клиентов", title: "Подарок и подарочный чек", icon: Gift,
+    situation: "Покупатель берёт товар в подарок.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Haluaisin ostaa tämän ___.", correct: "lahjaksi",
+        options: ["lahjaksi", "uuniksi", "naapuriksi", "vedeksi"], ru: "Я хотел бы купить это в подарок." },
+      { speaker: "Ты", side: "right", template: "Annan teille lahjakuitin, jolla lahjan voi ___.", correct: "vaihtaa",
+        options: ["vaihtaa", "syödä", "juoda", "hiihtää"], ru: "Дам вам подарочный чек, по которому подарок можно обменять." },
+      { speaker: "Покупатель", side: "left", template: "Voitteko ___ sen lahjapaperiin?", correct: "kääriä",
+        options: ["kääriä", "syödä", "keittää", "paistaa"], ru: "Можете завернуть это в подарочную бумагу?" },
+      { speaker: "Ты", side: "right", template: "Totta kai, ___ hetki.", correct: "odottakaa",
+        options: ["odottakaa", "nukkukaa", "juoskaa", "laulakaa"], ru: "Конечно, подождите минутку." },
+      { speaker: "Ты", side: "right", template: "Otan ___ pois.", correct: "hintalapun",
+        options: ["hintalapun", "kuun", "sään", "aamun"], ru: "Сниму ценник." },
+    ],
+  },
+  {
+    id: "ex-price", section: "Обращения клиентов", title: "Проверка цены и акции", icon: Receipt,
+    situation: "На товаре нет ценника, покупатель спрашивает про цену и акцию.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Anteeksi, tässä ei ole ___.", correct: "hintalappua",
+        options: ["hintalappua", "hiihtoa", "sateita", "kaupunkia"], ru: "Извините, здесь нет ценника." },
+      { speaker: "Ты", side: "right", template: "Tarkistan hinnan ___.", correct: "skannerilla",
+        options: ["skannerilla", "kaurapuurolla", "pyyhkeellä", "sängyllä"], ru: "Проверю цену сканером." },
+      { speaker: "Ты", side: "right", template: "Tämä on tarjouksessa, joten se on ___ kuin ennen.", correct: "halvempi",
+        options: ["halvempi", "kalliimpi", "hiljaisempi", "märempi"], ru: "Это по акции, так что дешевле, чем раньше." },
+      { speaker: "Покупатель", side: "left", template: "Kuinka kauan tarjous on ___?", correct: "voimassa",
+        options: ["voimassa", "kuuma", "sininen", "nopea"], ru: "Как долго действует акция?" },
+      { speaker: "Ты", side: "right", template: "Tarjous on voimassa ___ asti.", correct: "sunnuntaihin",
+        options: ["sunnuntaihin", "sunnuntai", "sunnuntaina", "sunnuntaita"], ru: "Акция действует до воскресенья." },
+    ],
+  },
+  {
+    id: "ex-kids", section: "Обращения клиентов", title: "Подарок ребёнку (Lupilu)", icon: Baby,
+    situation: "Покупатель выбирает игрушку для маленького ребёнка.",
+    lines: [
+      { speaker: "Ты", side: "right", template: "Minkä ___ lapselle lahja tulee?", correct: "ikäiselle",
+        options: ["ikäiselle", "sipulille", "sateelle", "jauhoille"], ru: "Для ребёнка какого возраста подарок?" },
+      { speaker: "Покупатель", side: "left", template: "Hän täyttää ___ kaksi vuotta.", correct: "huomenna",
+        options: ["huomenna", "hiljaa", "punaisena", "paistinpannu"], ru: "Ему завтра исполняется два года." },
+      { speaker: "Ты", side: "right", template: "Sopiva lahja voisi olla ___.", correct: "palapeli",
+        options: ["palapeli", "sirkkeli", "juustohöylä", "porakone"], ru: "Подойдёт, например, пазл." },
+      { speaker: "Покупатель", side: "left", template: "Onko tämä lelu ___ pienelle lapselle?", correct: "turvallinen",
+        options: ["turvallinen", "herkullinen", "märkä", "hidas"], ru: "Эта игрушка безопасна для маленького ребёнка?" },
+    ],
+  },
+  {
+    id: "ex-diy", section: "Обращения клиентов", title: "Консультация в отделе Parkside", icon: Hammer,
+    situation: "Покупатель выбирает инструмент для ремонта.",
+    lines: [
+      { speaker: "Покупатель", side: "left", template: "Tarvitsen ___, jolla voin porata reiän seinään.", correct: "porakoneen",
+        options: ["porakoneen", "vatupassin", "hanskat", "mittanauhan"], ru: "Мне нужна дрель, чтобы просверлить отверстие в стене." },
+      { speaker: "Ты", side: "right", template: "Akku ja ___ ovat mukana.", correct: "laturi",
+        options: ["laturi", "hiiri", "kala", "sormi"], ru: "Аккумулятор и зарядное устройство в комплекте." },
+      { speaker: "Покупатель", side: "left", template: "Mistä löydän ruuvit ja ___?", correct: "seinätulpat",
+        options: ["seinätulpat", "kananmunat", "sipsit", "banaanit"], ru: "Где найти шурупы и дюбели?" },
+      { speaker: "Ты", side: "right", template: "Ne ovat työkalujen ___.", correct: "vieressä",
+        options: ["vieressä", "viereen", "vierestä", "viereltä"], ru: "Они рядом с инструментами." },
+      { speaker: "Покупатель", side: "left", template: "Onko tuotteella ___?", correct: "takuu",
+        options: ["takuu", "nälkä", "aamu", "kieli"], ru: "На товар есть гарантия?" },
+    ],
+  },
 ];
 
 /* ---------------------------------------------------------
@@ -649,10 +1099,11 @@ const C = {
   spruce: "#2E7D53", spruceDeep: "#1B5138", spruceTint: "#DDEFE3",
   lake: "#2569A6", lakeDeep: "#194C80", lakeTint: "#DCEAF5",
   amber: "#CE8A2E", amberDeep: "#A66E20", amberTint: "#F5E7CE",
-  berry: "#B0424B", mist: "#71806F", line: "#DDD2AF",
+  berry: "#B0424B", berryDeep: "#7E2A32", berryTint: "#F6E1E2", mist: "#71806F", line: "#DDD2AF",
 };
 function groupColor(group) {
   if (group === "work") return { main: C.lake, deep: C.lakeDeep, tint: C.lakeTint };
+  if (group === "nonfood") return { main: C.berry, deep: C.berryDeep, tint: C.berryTint };
   if (group === "custom") return { main: C.amber, deep: C.amberDeep, tint: C.amberTint };
   return { main: C.spruce, deep: C.spruceDeep, tint: C.spruceTint };
 }
@@ -661,10 +1112,7 @@ function groupColor(group) {
    ХРАНИЛИЩЕ
 --------------------------------------------------------- */
 function loadJSON(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (e) { return fallback; }
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
 }
 function saveJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
@@ -734,7 +1182,7 @@ function SuomenPolku() {
   function findTopic(id) {
     if (id === "custom") return customTopic;
     if (id === "mixed") return mixedTopic;
-    return [...TOPICS_WORK, ...TOPICS_GENERAL].find((t) => t.id === id);
+    return [...TOPICS_WORK, ...TOPICS_NONFOOD, ...TOPICS_GENERAL].find((t) => t.id === id);
   }
   const activeTopic = activeTopicId ? findTopic(activeTopicId) : null;
   const activeExercise = activeExerciseId ? allExercises.find((e) => e.id === activeExerciseId) : null;
@@ -743,7 +1191,9 @@ function SuomenPolku() {
 
   function poolForTopic(topicId) {
     const group = topicGroup(topicId);
+    if (topicId === "mixed") return ALL_STORE_WORDS;
     if (group === "work") return ALL_WORK_WORDS;
+    if (group === "nonfood") return ALL_NONFOOD_WORDS;
     if (group === "general") return TOPICS_GENERAL.flatMap((t) => wordsWithIds(t));
     return customWords.length >= 4 ? customWords : [...customWords, ...ALL_WORK_WORDS];
   }
@@ -757,17 +1207,17 @@ function SuomenPolku() {
 
   const totalKnown = useMemo(() => Object.values(progress).filter(Boolean).length, [progress]);
   const totalWords = useMemo(
-    () => [...TOPICS_WORK, ...TOPICS_GENERAL].reduce((n, t) => n + t.words.length, 0) + customWords.length,
+    () => [...TOPICS_WORK, ...TOPICS_NONFOOD, ...TOPICS_GENERAL].reduce((n, t) => n + t.words.length, 0) + customWords.length,
     [customWords]
   );
 
   function openTopic(id) { setActiveTopicId(id); setView("topic"); }
 
   function startMixedPractice() {
-    const unknown = shuffle(ALL_WORK_WORDS.filter((w) => !progress[w.id]));
+    const unknown = shuffle(ALL_STORE_WORDS.filter((w) => !progress[w.id]));
     let pool = unknown.slice(0, 12);
     if (pool.length < 8) {
-      const known = shuffle(ALL_WORK_WORDS.filter((w) => progress[w.id]));
+      const known = shuffle(ALL_STORE_WORDS.filter((w) => progress[w.id]));
       pool = shuffle([...pool, ...known.slice(0, 12 - pool.length)]);
     }
     setMixedWords(pool);
@@ -864,7 +1314,7 @@ function SuomenPolku() {
     setDoneExercises((d) => d.filter((x) => x !== id));
   }
 
-  function resetProgress() {
+  async function resetProgress() {
     if (!resetArmed) { setResetArmed(true); setTimeout(() => setResetArmed(false), 3000); return; }
     setProgress({});
     try { localStorage.removeItem("suomen-polku-progress"); } catch (e) {}
@@ -1081,7 +1531,7 @@ function HomeScreen({
   doneExercisesCount, totalExercises, resetArmed, resetProgress,
 }) {
   const pct = totalWords ? Math.round((totalKnown / totalWords) * 100) : 0;
-  const topics = activeGroup === "work" ? TOPICS_WORK : TOPICS_GENERAL;
+  const topics = activeGroup === "work" ? TOPICS_WORK : activeGroup === "nonfood" ? TOPICS_NONFOOD : TOPICS_GENERAL;
   const groupCol = groupColor(activeGroup);
   const goal = stats.goal || DEFAULT_GOAL;
   const dailyPct = Math.min(100, Math.round((stats.dailyXp / goal) * 100));
@@ -1207,20 +1657,26 @@ function HomeScreen({
         <Plus size={19} /> Добавить новое слово
       </button>
 
-      <div className="flex gap-2 mb-6" style={{ background: C.paperDeep, borderRadius: 15, padding: 5 }}>
-        <button onClick={() => setActiveGroup("work")} className="press flex-1 flex items-center justify-center gap-2"
-          style={{ padding: "11px 0", borderRadius: 11, fontSize: 14, fontWeight: 700,
-            background: activeGroup === "work" ? C.lake : "transparent",
-            color: activeGroup === "work" ? C.paper : C.mist }}>
-          <Store size={16} /> Работа в магазине
-        </button>
-        <button onClick={() => setActiveGroup("general")} className="press flex-1 flex items-center justify-center gap-2"
-          style={{ padding: "11px 0", borderRadius: 11, fontSize: 14, fontWeight: 700,
-            background: activeGroup === "general" ? C.spruce : "transparent",
-            color: activeGroup === "general" ? C.paper : C.mist }}>
-          <BookOpen size={16} /> Основы языка
-        </button>
+      <div className="flex gap-1.5 mb-4" style={{ background: C.paperDeep, borderRadius: 15, padding: 5 }}>
+        {[
+          { id: "work", label: "Магазин", Icon: Store, color: C.lake },
+          { id: "nonfood", label: "Non-food", Icon: Shirt, color: C.berry },
+          { id: "general", label: "Основы", Icon: BookOpen, color: C.spruce },
+        ].map(({ id, label, Icon, color }) => (
+          <button key={id} onClick={() => setActiveGroup(id)} className="press flex-1 flex items-center justify-center gap-1.5"
+            style={{ padding: "11px 0", borderRadius: 11, fontSize: 14, fontWeight: 700,
+              background: activeGroup === id ? color : "transparent",
+              color: activeGroup === id ? C.paper : C.mist }}>
+            <Icon size={15} /> {label}
+          </button>
+        ))}
       </div>
+      {activeGroup === "nonfood" && (
+        <div className="mono" style={{ fontSize: 11.5, color: C.berryDeep, background: C.berryTint, borderRadius: 11, padding: "9px 12px", marginBottom: 20, lineHeight: 1.5 }}>
+          Esmara · Livergy · Crivit · Parkside · Lupilu · Livarno · Ernesto
+        </div>
+      )}
+      {activeGroup !== "nonfood" && <div style={{ height: 8 }} />}
 
       <div style={{ position: "relative" }}>
         <div style={{ position: "absolute", left: "50%", top: 10, bottom: 10, width: 0,
@@ -1292,7 +1748,7 @@ function ExercisesListScreen({ exercises, doneExercises, onBack, onOpen, onCreat
         Рабочие диалоги
       </div>
       <div style={{ fontSize: 14, color: C.mist, marginBottom: 16 }}>
-        Короткие ситуации с покупателями и коллегами. Вставляйте нужное слово или фразу вместо пропуска.
+        Ситуации с покупателями и коллегами: от кассы до возвратов и заказов. Вставляйте нужное слово или фразу вместо пропуска.
       </div>
 
       <button onClick={onCreate} className="press w-full flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 mb-6"
@@ -1300,42 +1756,58 @@ function ExercisesListScreen({ exercises, doneExercises, onBack, onOpen, onCreat
         <Plus size={18} /> Добавить своё задание
       </button>
 
-      <div className="flex flex-col gap-3">
-        {exercises.map((ex) => {
-          const Icon = ex.icon;
-          const isDone = doneExercises.includes(ex.id);
-          return (
-            <div key={ex.id} className="flex items-center gap-2">
-              <button onClick={() => onOpen(ex.id)} className="press" style={{
-                flex: 1, background: isDone ? C.amberTint : C.lakeTint, border: `1px solid ${isDone ? C.amber : C.lake}55`, borderRadius: 17,
-                padding: "16px 18px", display: "flex", alignItems: "center", gap: 14, textAlign: "left",
-              }}>
-                <div style={{ width: 42, height: 42, borderRadius: "50%", background: isDone ? C.amber : C.lake,
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Icon size={19} color={C.paper} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div className="flex items-center gap-2">
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>{ex.title}</span>
+      {(() => {
+        const sections = [];
+        exercises.forEach((ex) => {
+          const name = ex.isCustom ? "Мои задания" : (ex.section || "Повседневные ситуации");
+          let s = sections.find((x) => x.name === name);
+          if (!s) { s = { name, items: [] }; sections.push(s); }
+          s.items.push(ex);
+        });
+        return sections.map((sec) => (
+          <div key={sec.name} className="mb-6">
+            <div className="mono" style={{ fontSize: 12.5, color: C.mist, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>
+              {sec.name} · {sec.items.filter((e) => doneExercises.includes(e.id)).length}/{sec.items.length}
+            </div>
+            <div className="flex flex-col gap-3">
+              {sec.items.map((ex) => {
+                const Icon = ex.icon;
+                const isDone = doneExercises.includes(ex.id);
+                return (
+                  <div key={ex.id} className="flex items-center gap-2">
+                    <button onClick={() => onOpen(ex.id)} className="press" style={{
+                      flex: 1, background: isDone ? C.amberTint : C.lakeTint, border: `1px solid ${isDone ? C.amber : C.lake}55`, borderRadius: 17,
+                      padding: "16px 18px", display: "flex", alignItems: "center", gap: 14, textAlign: "left",
+                    }}>
+                      <div style={{ width: 42, height: 42, borderRadius: "50%", background: isDone ? C.amber : C.lake,
+                        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <Icon size={19} color={C.paper} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div className="flex items-center gap-2">
+                          <span style={{ fontWeight: 700, fontSize: 15 }}>{ex.title}</span>
+                          {ex.isCustom && (
+                            <span className="mono" style={{ fontSize: 9, color: C.amberDeep, border: `1px solid ${C.amber}`, borderRadius: 6, padding: "1px 5px" }}>СВОЁ</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: C.ink, opacity: 0.65, marginTop: 2 }}>{ex.situation}</div>
+                      </div>
+                      {isDone ? <Check size={18} color={C.amberDeep} /> : <ChevronRight size={18} color={C.lakeDeep} />}
+                    </button>
                     {ex.isCustom && (
-                      <span className="mono" style={{ fontSize: 9, color: C.amberDeep, border: `1px solid ${C.amber}`, borderRadius: 6, padding: "1px 5px" }}>СВОЁ</span>
+                      <button onClick={() => handleDeleteClick(ex.id)} className="press" style={{
+                        padding: 10, background: "none", border: "none", color: armedDelete === ex.id ? C.berry : C.mist,
+                      }}>
+                        <Trash2 size={16} />
+                      </button>
                     )}
                   </div>
-                  <div style={{ fontSize: 12.5, color: C.ink, opacity: 0.65, marginTop: 2 }}>{ex.situation}</div>
-                </div>
-                {isDone ? <Check size={18} color={C.amberDeep} /> : <ChevronRight size={18} color={C.lakeDeep} />}
-              </button>
-              {ex.isCustom && (
-                <button onClick={() => handleDeleteClick(ex.id)} className="press" style={{
-                  padding: 10, background: "none", border: "none", color: armedDelete === ex.id ? C.berry : C.mist,
-                }}>
-                  <Trash2 size={16} />
-                </button>
-              )}
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          </div>
+        ));
+      })()}
     </div>
   );
 }
@@ -1607,6 +2079,9 @@ function ProgressScreen({ topicProgress, totalKnown, totalWords, customCount, st
   const workTotals = TOPICS_WORK.reduce((acc, t) => {
     const p = topicProgress(t.id); return { known: acc.known + p.known, total: acc.total + p.total };
   }, { known: 0, total: 0 });
+  const nonfoodTotals = TOPICS_NONFOOD.reduce((acc, t) => {
+    const p = topicProgress(t.id); return { known: acc.known + p.known, total: acc.total + p.total };
+  }, { known: 0, total: 0 });
   const generalTotals = TOPICS_GENERAL.reduce((acc, t) => {
     const p = topicProgress(t.id); return { known: acc.known + p.known, total: acc.total + p.total };
   }, { known: 0, total: 0 });
@@ -1671,6 +2146,7 @@ function ProgressScreen({ topicProgress, totalKnown, totalWords, customCount, st
 
       <div className="rounded-2xl mb-8" style={{ background: C.paperDeep, border: `1px solid ${C.line}`, padding: 20 }}>
         <SectionRow label="Работа в магазине" icon={Store} color={C.lake} known={workTotals.known} total={workTotals.total} />
+        <SectionRow label="Non-food (Esmara, Crivit, Parkside…)" icon={Shirt} color={C.berry} known={nonfoodTotals.known} total={nonfoodTotals.total} />
         <SectionRow label="Основы языка" icon={BookOpen} color={C.spruce} known={generalTotals.known} total={generalTotals.total} />
         <div style={{ marginBottom: 0 }}>
           <SectionRow label="Мои слова" icon={Sparkles} color={C.amber} known={customTotals.known} total={customTotals.total || customCount} />
@@ -1682,6 +2158,13 @@ function ProgressScreen({ topicProgress, totalKnown, totalWords, customCount, st
       </div>
       <div className="mb-8">
         {TOPICS_WORK.map((t) => <TopicRow key={t.id} t={t} />)}
+      </div>
+
+      <div className="mono" style={{ fontSize: 13, color: C.mist, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
+        Non-food
+      </div>
+      <div className="mb-8">
+        {TOPICS_NONFOOD.map((t) => <TopicRow key={t.id} t={t} />)}
       </div>
 
       <div className="mono" style={{ fontSize: 13, color: C.mist, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
